@@ -79,9 +79,9 @@ fn calculate_row(
                 // Artificial random wait time
                 let mut rand = rand::rng();
                 rand.reseed().unwrap();
-                let millis: u64 = rand.random_range(6..20);
+                let millis: u64 = rand.random_range(16..32);
 
-                thread::sleep(std::time::Duration::from_millis(6));
+                thread::sleep(std::time::Duration::from_millis(millis));
             }
         }
     };
@@ -217,7 +217,8 @@ fn sdl_run(pyramid: Arc<Mutex<VecDeque<Vec<Vec<u64>>>>>) -> Result<(), String> {
 
     let texture_creator = canvas.texture_creator();
 
-    let font = ttf_context.load_font("./assets/inter.ttf", 32)?;
+    let mut font_size: u16 = 32;
+    let mut font = ttf_context.load_font("./assets/inter.ttf", 32)?;
 
     //canvas.copy(&texture, None, None)?;
     canvas.present();
@@ -295,40 +296,47 @@ fn sdl_run(pyramid: Arc<Mutex<VecDeque<Vec<Vec<u64>>>>>) -> Result<(), String> {
             ..
         } = texture.query();
 
-        let target = match (
-            window_width >= texture_width,
-            window_height >= texture_height,
-            window_width as f32 / texture_width as f32,
-            window_height as f32 / texture_height as f32,
-        ) {
-            (true, true, _, _) => Rect::new(0, 0, texture_width, texture_height),
-            (true, false, _, height_ratio) => Rect::new(
-                0,
-                0,
-                (texture_width as f32 * height_ratio) as u32,
-                window_height,
-            ),
-            (false, true, width_ratio, _) => Rect::new(
-                0,
-                0,
-                window_width,
-                (texture_height as f32 * width_ratio) as u32,
-            ),
-            (false, false, width_ratio, height_ratio) => match width_ratio < height_ratio {
-                true => Rect::new(
-                    0,
-                    0,
-                    (texture_width as f32 * width_ratio) as u32,
-                    (texture_height as f32 * width_ratio) as u32,
-                ),
-                false => Rect::new(
-                    0,
-                    0,
-                    (texture_width as f32 * height_ratio) as u32,
-                    (texture_height as f32 * height_ratio) as u32,
-                ),
-            },
-        };
+        if window_width < texture_width || window_height < texture_height {
+            font_size -= 1;
+            font = ttf_context.load_font("assets/inter.ttf", font_size)?;
+        }
+
+        let target = Rect::new(0, 0, texture_width, texture_height);
+
+        //let target = match (
+        //    window_width >= texture_width,
+        //    window_height >= texture_height,
+        //    window_width as f32 / texture_width as f32,
+        //    window_height as f32 / texture_height as f32,
+        //) {
+        //    (true, true, _, _) => Rect::new(0, 0, texture_width, texture_height),
+        //    (true, false, _, height_ratio) => Rect::new(
+        //        0,
+        //        0,
+        //        (texture_width as f32 * height_ratio) as u32,
+        //        window_height,
+        //    ),
+        //    (false, true, width_ratio, _) => Rect::new(
+        //        0,
+        //        0,
+        //        window_width,
+        //        (texture_height as f32 * width_ratio) as u32,
+        //    ),
+        //    (false, false, width_ratio, height_ratio) => match width_ratio < height_ratio {
+        //        true => Rect::new(
+        //            0,
+        //            0,
+        //            (texture_width as f32 * width_ratio) as u32,
+        //            (texture_height as f32 * width_ratio) as u32,
+        //        ),
+        //        false => Rect::new(
+        //            0,
+        //            0,
+        //            (texture_width as f32 * height_ratio) as u32,
+        //            (texture_height as f32 * height_ratio) as u32,
+        //        ),
+        //    },
+        //};
 
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
@@ -342,7 +350,7 @@ fn sdl_run(pyramid: Arc<Mutex<VecDeque<Vec<Vec<u64>>>>>) -> Result<(), String> {
 }
 
 fn main() {
-    let n_worker_threads = 16;
+    let n_worker_threads = 12;
     //let mut pyramid: VecDeque<Vec<Vec<u32>>> = VecDeque::new();
 
     let pyramid_gen = PyramidGenerator::new();
