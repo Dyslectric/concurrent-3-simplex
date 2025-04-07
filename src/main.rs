@@ -5,6 +5,7 @@ use std::{
 };
 
 use rand::Rng;
+use sdl2::{rect::Rect, render::TextureQuery};
 
 fn print_top_layer(pyramid: &Arc<Mutex<VecDeque<Vec<Vec<u64>>>>>) {
     {
@@ -71,16 +72,16 @@ fn calculate_row(
                 };
 
                 push_value(&pyramid, row, above + front_left + front_right);
+                pyramid.clear_poison();
 
-                print_top_layer(&pyramid);
+                //print_top_layer(&pyramid);
 
                 // Artificial random wait time
-                //let mut rand = rand::rng();
-                //rand.reseed().unwrap();
-                //let millis: u64 = rand.random_range(100..300);
+                let mut rand = rand::rng();
+                rand.reseed().unwrap();
+                let millis: u64 = rand.random_range(6..20);
 
-                //thread::sleep(std::time::Duration::from_millis(millis));
-
+                thread::sleep(std::time::Duration::from_millis(6));
             }
         }
     };
@@ -159,7 +160,6 @@ fn run_layer_calculations(
             worker.join().unwrap();
         });
     }
-
 }
 
 struct PyramidGenerator {
@@ -173,7 +173,7 @@ impl PyramidGenerator {
         };
     }
     fn run(&self, n_worker_threads: usize) {
-        for layer in 0..72 {
+        for layer in 0..40 {
             //let mut proc_queue: VecDeque<Arc<Box<dyn Fn() -> ()>>> = VecDeque::new();
 
             // Clone the last layer to avoid locking the pyramid to observe
@@ -196,26 +196,35 @@ impl PyramidGenerator {
 fn sdl_run(pyramid: Arc<Mutex<VecDeque<Vec<Vec<u64>>>>>) -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
+    let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string())?;
+
     //let _image_context = sdl2::image::init(InitFlag::PNG | InitFlag::JPG)?;
     let window = video_subsystem
         .window("rust-sdl2 demo: Video", 800, 600)
+        .resizable()
         .position_centered()
+        .opengl()
         .build()
         .map_err(|e| e.to_string())?;
+
+    let (window_width, window_height) = { window.size() };
 
     let mut canvas = window
         .into_canvas()
         .software()
         .build()
         .map_err(|e| e.to_string())?;
+
     let texture_creator = canvas.texture_creator();
-    //let texture = texture_creator.load_texture(png)?;
+
+    let font = ttf_context.load_font("./assets/inter.ttf", 32)?;
 
     //canvas.copy(&texture, None, None)?;
     canvas.present();
 
     use sdl2::event::Event;
     use sdl2::keyboard::Keycode;
+    use sdl2::pixels::Color;
 
     'mainloop: loop {
         for event in sdl_context.event_pump()?.poll_iter() {
@@ -228,21 +237,120 @@ fn sdl_run(pyramid: Arc<Mutex<VecDeque<Vec<Vec<u64>>>>>) -> Result<(), String> {
                 _ => {}
             }
         }
+
+        let (window_width, window_height) = { canvas.window().size() };
+
+        let pyramid_top_layer = {
+            let pyramid = pyramid.lock().unwrap();
+
+            match pyramid.get(0) {
+                Some(layer) => Some(layer.clone()),
+                None => None,
+            }
+        };
+
+        let top_layer_text = match pyramid_top_layer {
+            Some(layer) => Some({
+                let mut layer_string: String = "".to_string();
+
+                for row in layer {
+                    for column in &row {
+                        layer_string.push_str(column.to_string().as_str());
+                        layer_string.push_str("   ");
+                    }
+                    if row.len() != 0 {
+                        layer_string.push_str("\n\n");
+                    }
+                }
+
+                layer_string
+            }),
+            None => None,
+        };
+
+        //let text
+
+        let top_layer = font
+            .render(
+                match top_layer_text {
+                    None => "".to_string(),
+                    Some(s) => s,
+                }
+                .as_str(),
+            )
+            //.blended(Color::RGBA(255, 255, 255, 255))
+            .blended_wrapped(Color::RGBA(255, 255, 255, 255), 0)
+            .map_err(|e| e.to_string())?;
+
+        //let middle_layer =
+        //let bottom_layer =
+
+        let texture = texture_creator
+            .create_texture_from_surface(&top_layer)
+            .map_err(|e| e.to_string())?;
+
+        let TextureQuery {
+            width: texture_width,
+            height: texture_height,
+            ..
+        } = texture.query();
+
+        let target = match (
+            window_width >= texture_width,
+            window_height >= texture_height,
+            window_width as f32 / texture_width as f32,
+            window_height as f32 / texture_height as f32,
+        ) {
+            (true, true, _, _) => Rect::new(0, 0, texture_width, texture_height),
+            (true, false, _, height_ratio) => Rect::new(
+                0,
+                0,
+                (texture_width as f32 * height_ratio) as u32,
+                window_height,
+            ),
+            (false, true, width_ratio, _) => Rect::new(
+                0,
+                0,
+                window_width,
+                (texture_height as f32 * width_ratio) as u32,
+            ),
+            (false, false, width_ratio, height_ratio) => match width_ratio < height_ratio {
+                true => Rect::new(
+                    0,
+                    0,
+                    (texture_width as f32 * width_ratio) as u32,
+                    (texture_height as f32 * width_ratio) as u32,
+                ),
+                false => Rect::new(
+                    0,
+                    0,
+                    (texture_width as f32 * height_ratio) as u32,
+                    (texture_height as f32 * height_ratio) as u32,
+                ),
+            },
+        };
+
+        canvas.set_draw_color(Color::RGB(0, 0, 0));
+        canvas.clear();
+        canvas.copy(&texture, None, target).unwrap();
+        canvas.present();
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
     }
 
     Ok(())
 }
 
 fn main() {
-    let n_worker_threads = 10;
+    let n_worker_threads = 16;
     //let mut pyramid: VecDeque<Vec<Vec<u32>>> = VecDeque::new();
 
     let pyramid_gen = PyramidGenerator::new();
     let sdl_pyramid_ref = Arc::clone(&pyramid_gen.pyramid);
 
     let pyramid_gen_thread = thread::spawn(move || pyramid_gen.run(n_worker_threads));
-    pyramid_gen_thread.join().unwrap();
-    //let sdl_thread = thread::spawn(move || sdl_run(sdl_pyramid_ref));
+    let sdl_thread = thread::spawn(move || sdl_run(sdl_pyramid_ref));
 
-    //sdl_thread.join().unwrap();
+    pyramid_gen_thread.join().unwrap();
+    sdl_thread.join().unwrap();
 }
